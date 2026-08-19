@@ -1,6 +1,6 @@
 {
   "name": "dsh-mem0-memory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Thin bridge: recall Mem0 memories into DSH agent context via agent/pre-step injection.",
   "type": "module",
   "main": "lib/index.js",
@@ -34,5 +34,13 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.6"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kittitys/dsh-mem0-memory.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kittitys/dsh-mem0-memory/issues"
+  },
+  "homepage": "https://github.com/kittitys/dsh-mem0-memory"
 }
