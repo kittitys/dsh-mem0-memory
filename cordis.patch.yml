@@ -1,0 +1,4 @@
+# dsh-mem0-memory: recall Mem0 memories via agent/pre-step injection.
+- insert:
+    - id: mem0-memory
+      name: 'dsh-mem0-memory'

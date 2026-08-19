@@ -1,0 +1,38 @@
+{
+  "name": "dsh-mem0-memory",
+  "version": "0.1.0",
+  "description": "Thin bridge: recall Mem0 memories into DSH agent context via agent/pre-step injection.",
+  "type": "module",
+  "main": "lib/index.js",
+  "bin": {
+    "dsh-mem0-import": "bin/dsh-mem0-import.mjs",
+    "dsh-mem0-search": "bin/dsh-mem0-search.mjs"
+  },
+  "files": [
+    "lib/index.js",
+    "bin/dsh-mem0-import.mjs",
+    "bin/dsh-mem0-search.mjs",
+    "scripts/g1-session-parser.mjs",
+    "scripts/mem0-server.py",
+    "scripts/setup.py",
+    "scripts/start-server.bat",
+    "scripts/start-server.sh",
+    "scripts/.env.example",
+    "scripts/excluded-workspaces.json",
+    "cordis.patch.yml",
+    "excluded-workspaces.example.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.6"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,21 @@
+# Node / npm
+node_modules/
+*.tgz
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv*/
+venv/
+
+# 本地数据与测试产物（绝不进 git）
+mem0_store/
+.env
+.test-data/
+.test/
+_backups/
+
+# 备份文件
+*.bak.*
+*.bak

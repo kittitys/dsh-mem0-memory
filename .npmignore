@@ -1,0 +1,13 @@
+# 发布包黑名单（红线①：零私有数据）——2026-08-20 审查发现补
+# 注：实测 npm 11 在 package.json 存在 files 白名单时**不 consult .npmignore**
+# （目录级 files 条目内的 .bak/pyc 仍会进包）；已改用 files 文件级白名单
+# 作为确定性防线。本文件保留：①GitHub 场景生效 ②意图文档 ③未来去掉 files 时的兜底。
+*.bak.*
+__pycache__/
+*.pyc
+.venv-test/
+.test-data/
+.test/
+
+_backups/
+# 注：npm 永远包含 README*/LICENSE* 开头文件——备份不得以 README/LICENSE/CHANGELOG 前缀命名
