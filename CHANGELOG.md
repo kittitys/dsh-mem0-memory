@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### 0.1.2（2026-08-22）
+
+- **降级可见性**：embedding API 故障触发关键词降级时，召回注入块现在会带警告行「⚠️ 注意：embedding 服务超时/故障，以下为降级关键词搜索结果（语义通道暂不可用），召回覆盖度可能下降。」——插件此前丢弃了 server 响应的 `degraded/mode` 标记，降级期间会话对结果质量下降毫不知情；已透传并对齐 OpenClaw 侧 mem0-memory 的 recall.js 实现。
+- 行为：`formatBlock(items, degraded)` 新增降级分支；`recallMemories` 返回透传 `degraded`/`mode`。
+
 ### 0.1.0（发布候选，待外部审查后发布）
 
 - **2026-08-20 定名**：包名由 dsh-mem0-bridge 更名为 **dsh-mem0-memory**（发布前改名，无外部影响；插件 id mem0-memory，与 OpenClaw 侧插件命名一脉相承）。
