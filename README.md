@@ -210,6 +210,8 @@ dsh-mem0-search "关键词" --json                                   # 原始 JS
 | `probePath`      | （空=关）                    | 排障探针日志文件路径（设置后才写文件）                 |
 | `autoImport`     | true                     | 会话结束自动增量导入（关 = 只用手动/定时）             |
 | `excludeWorkspaces` | `[]`                  | 不召回的工作区名单（子串匹配会话 cwd；另 `0_` 前缀工作区写死排除） |
+| `autoStartServer` | true                 | DSH 启动时确保 mem0 server 在跑（探测 /health，未在跑自动拉起一次；DSH 退出不带走 server） |
+| `pythonPath`     | （空）                  | 自动拉起 server 用的 python 路径（默认 `python`/`python3`；venv 用户可指定） |
 
 ## 工作原理
 

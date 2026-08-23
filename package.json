@@ -1,6 +1,6 @@
 {
   "name": "dsh-mem0-memory",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Thin bridge: recall Mem0 memories into DSH agent context via agent/pre-step injection.",
   "type": "module",
   "main": "lib/index.js",

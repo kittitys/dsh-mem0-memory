@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### 0.1.4（2026-08-23）
+
+- **server 自动拉起（autoStartServer）**：DSH 启动时插件探测 mem0 server 的 `/health`（3s 超时）——未在跑则自动 spawn 一次（`detached` 子进程，不随 DSH 退出）；已在跑则不动。用户装了插件 = 期望「与平台同步启动」，忘记手动开 server 也能工作。
+- 设计铁律：① 只探测 HTTP /health（端口有响应 = 在跑，无论谁起的）；② 每个 DSH 进程最多 spawn 一次，失败仅 WARN 绝不重试（OpenClaw 侧 16 进程抢锁事故教训）；③ server 常驻，DSH 退出不带走（最小化动作）。
+- 配置新增：`autoStartServer: true`（默认开，可关）+ `pythonPath`（可选，spawn 用 python 路径，默认 `python`/`python3`）。
+
 ### 0.1.3（2026-08-22）
 
 - **工作区排除（召回侧）**：排除工作区的会话不再召回/注入记忆——插件通过 `ctx.agents.requireInitiator()` 获取当前会话 cwd，判定与 G1 写入侧一致：cwd 路径段 `0_` 前缀（写死约定）+ 新增 `excludeWorkspaces` 配置（名单子串匹配，对应 G1 excluded-workspaces.json）。排除工作区对话省去召回延时（每轮 5-10s），内容本就不入库。
