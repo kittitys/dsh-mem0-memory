@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### 0.1.3（2026-08-22）
+
+- **工作区排除（召回侧）**：排除工作区的会话不再召回/注入记忆——插件通过 `ctx.agents.requireInitiator()` 获取当前会话 cwd，判定与 G1 写入侧一致：cwd 路径段 `0_` 前缀（写死约定）+ 新增 `excludeWorkspaces` 配置（名单子串匹配，对应 G1 excluded-workspaces.json）。排除工作区对话省去召回延时（每轮 5-10s），内容本就不入库。
+- 配置新增：`excludeWorkspaces: []`（默认空；如 `["财富密码"]`）。
+
 ### 0.1.2（2026-08-22）
 
 - **降级可见性**：embedding API 故障触发关键词降级时，召回注入块现在会带警告行「⚠️ 注意：embedding 服务超时/故障，以下为降级关键词搜索结果（语义通道暂不可用），召回覆盖度可能下降。」——插件此前丢弃了 server 响应的 `degraded/mode` 标记，降级期间会话对结果质量下降毫不知情；已透传并对齐 OpenClaw 侧 mem0-memory 的 recall.js 实现。
