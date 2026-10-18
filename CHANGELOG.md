@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 0.1.5（2026-10-18）
+
+- **适配 DSH 0.2.x（0.2.1-rc.2 实测）**，两处改动，缺一不可：
+  1. **peer 范围放宽**：`@deepseek-ai/dsh-agent-loop` 由 `^0.1.0-rc.6`（= `>=0.1.0-rc.6 <0.2.0`）改为 **`^0.1.0-rc.6 || ^0.2.1-rc.2`**。0.2.1 起底座新增「插件兼容性硬校验」，旧范围会被判为不兼容并**拒绝安装 + 回滚**（`installation rejected: Plugin dsh-mem0-memory@0.1.4 is incompatible with dsh 0.2.1-rc.2`）。
+      - 选**有界区间**而非 `*`/`>=`：本插件会向会话写入事件，声明「任何版本都支持」会在 DSH 大版本再变时静默踩雷（参见 2026-08-19 会话损坏事故）。0.3.x 起需重新验证后再放宽。
+      - 覆盖：0.1.5-rc.3（旧线）✅、0.2.1-rc.2（新线）✅、0.2.x 后续 rc/补丁 ✅。
+  2. **注入消息的 `source.kind` 改写**：`{ kind: "plugin", plugin: "dsh-mem0-memory", form: "recall" }` → **`{ kind: "plugin:dsh-mem0-memory", form: "recall" }`**。
+      - 根因：0.2.x 引入 session format **v4**，其 `source()` 校验**明确禁止 `kind:"plugin"`**（要求生产者自有 kind，`plugin:<name>` 即 V3→V4 迁移器对未知插件的标准映射）。若只放宽 peer 不改这里，结果是「装得上、但每轮对话在注入后报 `format v4 message requires a producer-owned source kind` 而失败」——比装不上更糟。
+      - 兼容性：0.1.x 的写入门槛只要求「kind 为非空字符串」，`kind:"plugin"` 的强校验仅针对 `system/message`，`user/message` 不受限 → 同一份代码在 0.1.x 与 0.2.x 上都能跑，无需按底座版本分支。
+- 影响面：`lib/index.js`（注入点一处）、`package.json`（版本 + peer）；server / G1 解析器 / 导入命令未改动。
+- 验证：0.2.1-rc.2 真实环境实跑（安装通过、注入链完整、会话可关闭重开、转录 v4 事件形态正确）。
+
 ### 0.1.4（2026-08-23）
 
 - **server 自动拉起（autoStartServer）**：DSH 启动时插件探测 mem0 server 的 `/health`（3s 超时）——未在跑则自动 spawn 一次（`detached` 子进程，不随 DSH 退出）；已在跑则不动。用户装了插件 = 期望「与平台同步启动」，忘记手动开 server 也能工作。
