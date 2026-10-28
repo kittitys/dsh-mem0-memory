@@ -154,6 +154,8 @@ python scripts/mem0-server.py --port 18200 # 启动服务
 > **peer 依赖警告可忽略**：安装时 pnpm 可能提示 `missing peer @deepseek-ai/cordis` / `@deepseek-ai/dsh-agent-loop`——这是声明性警告，插件运行时会从 DSH 的 bundle 安装处解析这些依赖，无需处理。
 >
 > **兼容的 DSH 版本**：`dsh-agent-loop` peer 范围 = `^0.1.0-rc.6 || ^0.2.1-rc.2`（0.1.5-rc.3 与 0.2.1-rc.2 均已验证）。DSH 0.2.1 起底座会做插件兼容性硬校验，版本号不在范围内会被**拒绝安装**；若你用的是更晚的大版本（0.3.x 起），请先确认插件已跟进再装。
+>
+> **DSH 0.2.x 的会话格式**：0.2.x 起会话转录改名为 `session.v4.jsonl.zstd`（旧名 `session.jsonl.zstd` 仍兼容），消息来源字段由 `{kind:"plugin",plugin:"x"}` 改为生产者自有 kind。本版（0.1.6+）同时支持两种格式；**0.1.5 及更早版本在 0.2.x 上会「看不到升级后的新会话」并且「把召回块当用户消息回灌」**，请勿在 0.2.x 上使用旧版。工作区排除现在支持三种标记：目录名 `0_` 开头、`excludeWorkspaces` 名单、**以及在 DSH 界面里把工作区改名成 `0_` 开头**。
 
 ## 首次导入：把你的历史会话装进记忆库
 

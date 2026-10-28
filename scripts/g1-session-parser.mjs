@@ -6,7 +6,9 @@
  *   DSH session（原始日志）→ G1 解析器 → 增量窗口 → mem0（唯一事实源）。
  *   本脚本是 G1 解析器主实现，负责把 DSH 的对话日志翻译成记忆批次。
  *
- * 【输入】  ~/.dsh/sessions/<projectKey>/<sessionId>/session.jsonl.zstd
+ * 【输入】  ~/.dsh/sessions/<projectKey>/<sessionId>/session*.jsonl.zstd
+ *           （0.1.x 写 session.jsonl.zstd；0.2.x 起写 session.v4.jsonl.zstd，
+ *            同目录取 mtime 最新者，见 resolveSessionFile）
  *          （zstd 帧容器：header 帧 + append 帧；事件 JSONL）
  * 【输出】  与 mem0 对话批次同构的数组 batch：
  *          <out>/<YYYY-MM-DD>/P0_NNN.json
@@ -70,6 +72,33 @@ const EXCLUDED_WORKSPACES_FILE = path.join(SCRIPT_DIR, "excluded-workspaces.json
 /** 不入库的工作区命名前缀（写死约定：未来新建不入库的工作区以此命名） */
 const EXCLUDE_PREFIX = "0_";
 
+// ─── 会话文件定位（2026-10-29 修复：DSH 0.2.x 写 session.v4.jsonl.zstd）────
+// 旧实现只认 `session.jsonl.zstd`；DSH 0.2.x 起写 `session.v4.jsonl.zstd`
+// （升级器还会为旧会话保留 v3/legacy 副本）——只认旧名会让升级后所有新会话
+// 对解析器不可见（DSH 侧素材静默断流）。
+// 规则：同一会话目录内取 mtime 最新的 session*.jsonl(.zstd)；mtime 相同取格式版本高的。
+const SESSION_FILE_PATTERN = /^session(?:\.v(\d+))?\.jsonl(?:\.zstd)?$/;
+
+/** 一个会话目录里应解析的转录文件；没有则返回 null。 */
+function resolveSessionFile(sessionDir) {
+  let names;
+  try { names = fs.readdirSync(sessionDir); } catch { return null; }
+  const candidates = [];
+  for (const name of names) {
+    const m = SESSION_FILE_PATTERN.exec(name);
+    if (!m) continue;
+    const full = path.join(sessionDir, name);
+    try {
+      const st = fs.statSync(full);
+      if (!st.isFile()) continue;
+      candidates.push({ full, mtime: st.mtimeMs, rank: m[1] ? Number(m[1]) : 0 });
+    } catch { /* 读写竞态跳过 */ }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => (b.mtime - a.mtime) || (b.rank - a.rank));
+  return candidates[0].full;
+}
+
 function loadExcludedWorkspaces() {
   if (!fs.existsSync(EXCLUDED_WORKSPACES_FILE)) {
     throw new Error(`工作区排除配置文件缺失: ${EXCLUDED_WORKSPACES_FILE}（fail-closed，拒绝无保护运行）`);
@@ -98,26 +127,34 @@ function decodeProjectKey(key) {
   return decoded.split("-").filter(Boolean).join("\\");
 }
 
-function isWorkspaceExcluded(projectKey, decoded, excluded) {
-  return excluded.some((e) => projectKey.includes(e) || decoded.includes(e));
+/** 名单匹配：原始 projectKey / 解码路径 / 真实路径（header.cwd，2026-10-29 新增）任一命中即排除。
+ *  @param realPath 会话 header.cwd 给出的绝对路径（权威）；缺失时传 null/undefined 只按前两者判 */
+function isWorkspaceExcluded(projectKey, decoded, excluded, realPath) {
+  const real = realPath ? String(realPath) : "";
+  return excluded.some((e) => projectKey.includes(e) || decoded.includes(e) || (real !== "" && real.includes(e)));
 }
 
 /** 前缀规则（写死约定）：不入库的工作区 = 名称以 `0_` 开头。名称有两处
  *  载体：①目录名（= 创建时的默认 title，路径派生 projectKey）；②台账标题
  *  （~/.dsh/storages/workspace.json 的 title，UI 可改名，不影响磁盘目录）。
- *  三个命中渠道：解码路径任一段 / 原始 projectKey 任一段 / 台账标题，
- *  任一命中即排除。
+ *  四个命中渠道：真实路径任一段（header.cwd）/ 解码路径任一段 / 原始 projectKey
+ *  任一段 / 台账标题，任一命中即排除。
+ *  2026-10-29：新增 cwd 渠道——`decodeProjectKey()` 把 `-` 当分隔符，含连字符的
+ *  路径会被切碎（OKR-DSH-Trial-20261024 → OKR\DSH\Trial\20261024），解出的路径
+ *  既查不到台账（标题渠道失效）也不含 `0_`（路径渠道失效）。
  *  @returns 命中渠道数组（空数组 = 未命中） */
-function prefixedChannels(projectKey, decoded, record) {
+function prefixedChannels(projectKey, decoded, record, realPath) {
   const ch = [];
-  if (decoded.split("\\").some((s) => s.startsWith(EXCLUDE_PREFIX))) ch.push("前缀0_(路径)");
+  const pathSegs = String(realPath || decoded).split(/[\\/]/).filter(Boolean);
+  if (pathSegs.some((s) => s.startsWith(EXCLUDE_PREFIX))) ch.push(realPath ? "前缀0_(cwd)" : "前缀0_(路径)");
+  if (realPath && decoded.split("\\").some((s) => s.startsWith(EXCLUDE_PREFIX))) ch.push("前缀0_(路径)");
   if (projectKey.split("-").some((s) => s.startsWith(EXCLUDE_PREFIX))) ch.push("前缀0_(projectKey)");
   if (record && String(record.title).startsWith(EXCLUDE_PREFIX)) ch.push("前缀0_(标题)");
   return ch;
 }
 
-function isPrefixedWorkspace(projectKey, decoded, record) {
-  return prefixedChannels(projectKey, decoded, record).length > 0;
+function isPrefixedWorkspace(projectKey, decoded, record, realPath) {
+  return prefixedChannels(projectKey, decoded, record, realPath).length > 0;
 }
 
 // ─── DSH 工作区台账（名称的权威载体）─────────────────────────────────────
@@ -150,18 +187,17 @@ function loadWorkspaceRegistry() {
   return _workspaceRegistry;
 }
 
-/** 由解码后的工作区路径查台账记录；basename 兜底（路径大小写/尾斜杠差异） */
+/** 由 header.cwd 给出的真实路径精确查台账（权威通道，无解码歧义） */
+function registryRecordForPath(realPath) {
+  if (!realPath) return null;
+  return loadWorkspaceRegistry().get(normalizeWsPath(realPath)) ?? null;
+}
+
+/** 由解码后的工作区路径查台账记录（仅 header.cwd 缺失时的兜底）。
+ *  2026-10-29 移除 basename 兜底：连字符路径下解码只剩碎片（如 `20261028`），
+ *  basename 兜底可能误命中别的工作区标题 → 误排除，比误入库更难发现。 */
 function registryRecordFor(decoded) {
-  const rec = loadWorkspaceRegistry().get(normalizeWsPath(decoded));
-  if (rec) return rec;
-  const last = decoded.split("\\").filter(Boolean).pop();
-  if (!last) return null;
-  const lc = last.toLowerCase();
-  for (const r of loadWorkspaceRegistry().values()) {
-    const rLast = r.path.split("\\").filter(Boolean).pop();
-    if (rLast && rLast.toLowerCase() === lc) return r;
-  }
-  return null;
+  return loadWorkspaceRegistry().get(normalizeWsPath(decoded)) ?? null;
 }
 
 // ─── Logger（复杂管线工程守则：必须有足够追查问题根因的 log）─────────────
@@ -314,7 +350,10 @@ function parseEvents(text) {
   return events;
 }
 
-// ─── session header 读取（depth/origin 判断）─────────────────────────────
+// ─── session header 读取（depth/origin/cwd 判断）─────────────────────────
+// cwd：DSH 写入 header 的绝对工作目录（SessionHeader.cwd，「会话创建时的目录」）。
+// 2026-10-29 起作为工作区身份判定的权威来源——projectKey 是路径的有损编码，
+// 含连字符时无法还原（见 prefixedChannels 注释）。
 function readSessionHeader(file) {
   try {
     const buf = fs.readFileSync(file);
@@ -330,11 +369,23 @@ function readSessionHeader(file) {
       delegationDepth: typeof h.delegationDepth === "number" ? h.delegationDepth : 0,
       origin: h.origin,
       parentSession: h.parentSession,
+      cwd: typeof h.cwd === "string" && h.cwd.trim() !== "" ? h.cwd : undefined,
+      version: typeof h.version === "number" ? h.version : undefined,
       empty: false,
     };
   } catch {
     return { empty: true };
   }
+}
+
+/** 一个工作区目录里任一会话 header 给出的 cwd（绝对路径，权威）。
+ *  只读各会话文件的第一帧，成本远低于全量解析；全部缺失则返回 undefined。 */
+function firstHeaderCwd(sessionFiles) {
+  for (const { file } of sessionFiles) {
+    const h = readSessionHeader(file);
+    if (!h.empty && h.cwd) return h.cwd;
+  }
+  return undefined;
 }
 
 // ─── 文本提取 ────────────────────────────────────────────────────────────
@@ -398,16 +449,39 @@ function hasSecret(c) {
 }
 
 // ─── 消息提取（核心：user 锚点分组 + 每 turn 取最后一条 assistant）───────
-const INJECTION_KINDS = new Set([
-  "plugin", "system", "goal", "agent-instructions", "skill-catalog",
-  "subagent-settled", "subagent-report", "hook", "compaction",
+// 2026-10-29 修复（v4 源类型改造）：
+//   DSH 0.2.x 的 session format v4 把 source 从 `{kind:"plugin", plugin:"x"}`
+//   改成「生产者自有 kind」：插件注入 = `plugin:<name>`，系统注入 = `time-context`
+//   / `agent-instructions` / `skill-catalog` / `user-approval` / `runtime-context`
+//   / `subagent-*` / `compact-checkpoint` / `tool-*` / `goal` / `model-selection` …
+//   旧实现是黑名单，v4 新 kind 全部漏网 —— 实测 36 个 v4 会话里插件自己的注入块
+//   （`plugin:dsh-mem0-memory` / `plugin:dsh-mem0-bridge`）会被当成真实用户消息回灌
+//   记忆库（自我污染循环）。改为**白名单**：只有 `kind:"user"` 与无 source 的历史
+//   消息算真实用户；其余一律视为注入并计数，未知 kind 打 WARN 便于发现新渠道。
+const REAL_USER_KINDS = new Set(["user"]);
+const KNOWN_INJECTION_KINDS = new Set([
+  "plugin",   // 0.1.x 的 catch-all 包装（v4 已废止，历史会话里仍会出现）
+  "system", "developer", "goal", "agent-instructions", "skill-catalog",
+  "subagent-settled", "subagent-report", "hook", "compaction", "compact-checkpoint",
+  "time-context", "runtime-context", "tmux-context", "model-selection", "plan-mode",
+  "user-approval", "repeat-tool-reminder", "tool-jobs", "tool-goal", "tool-cordis",
+  "agent-message", "team-message", "coordinator", "schedule", "webhook",
+  "session-reference", "system-prompt", "cordis-host-runner", "dsh-session-title-llm",
+  "ptc-mode", "compact-basic",
 ]);
+const _warnedKinds = new Set();
 
 function isRealUserEvent(ev) {
   if (ev.type !== "user/message") return false;
   const kind = ev.data?.source?.kind;
-  if (kind === undefined) return true; // 无 source 视为真实用户（兼容旧格式）
-  return !INJECTION_KINDS.has(kind);
+  if (kind === undefined) return true;              // 无 source：兼容 0.1.x 之前的历史格式
+  if (REAL_USER_KINDS.has(kind)) return true;
+  const isPluginProducer = typeof kind === "string" && kind.startsWith("plugin:");
+  if (!isPluginProducer && !KNOWN_INJECTION_KINDS.has(kind) && !_warnedKinds.has(kind)) {
+    _warnedKinds.add(kind);
+    log("WARN", "filter", `未知 source.kind=${kind}：按注入丢弃（若这是真实用户消息，请把该 kind 加进 REAL_USER_KINDS）`);
+  }
+  return false;
 }
 
 /**
@@ -613,9 +687,11 @@ async function main() {
       const sk = path.basename(path.dirname(path.dirname(args.session)));
       const excluded = loadExcludedWorkspaces();
       const decoded = decodeProjectKey(sk);
-      const record = registryRecordFor(decoded);
-      if (isWorkspaceExcluded(sk, decoded, excluded) || isPrefixedWorkspace(sk, decoded, record)) {
-        log("ERROR", "filter", `--session 属于排除工作区，拒绝解析: ${sk} (${decoded})`);
+      const realPath = readSessionHeader(args.session).cwd;   // 权威路径（header.cwd）
+      const record = registryRecordForPath(realPath) ?? registryRecordFor(decoded);
+      const prefixCh = prefixedChannels(sk, decoded, record, realPath);
+      if (isWorkspaceExcluded(sk, decoded, excluded, realPath) || prefixCh.length > 0) {
+        log("ERROR", "filter", `--session 属于排除工作区，拒绝解析: ${sk} (${realPath || decoded})`);
         process.exit(1);
       }
       files = [{ file: args.session, dir: path.basename(path.dirname(args.session)) }];
@@ -625,20 +701,31 @@ async function main() {
         const pd = path.join(SESSIONS_ROOT, projectDir);
         if (!fs.statSync(pd).isDirectory()) continue;
         if (projectDir === "Archived") continue;
+        // 先定位该工作区下所有可解析的会话文件（0.2.x 是 session.v4.jsonl.zstd）
+        const projectFiles = [];
+        for (const sessionDir of fs.readdirSync(pd)) {
+          const f = resolveSessionFile(path.join(pd, sessionDir));
+          if (f) projectFiles.push({ file: f, dir: sessionDir });
+        }
         const decoded = decodeProjectKey(projectDir);
-        const prefixCh = prefixedChannels(projectDir, decoded, registryRecordFor(decoded));
-        if (isWorkspaceExcluded(projectDir, decoded, excluded) || prefixCh.length > 0) {
+        // 权威路径：优先会话 header.cwd（绝对路径，不受 projectKey 有损编码影响）
+        const realPath = firstHeaderCwd(projectFiles);
+        const record = registryRecordForPath(realPath) ?? registryRecordFor(decoded);
+        const prefixCh = prefixedChannels(projectDir, decoded, record, realPath);
+        const listHit = isWorkspaceExcluded(projectDir, decoded, excluded, realPath);
+        if (listHit || prefixCh.length > 0) {
           filtered.workspace++;
           const reasons = [];
           if (prefixCh.length > 0) reasons.push(prefixCh.join(";"));
-          if (isWorkspaceExcluded(projectDir, decoded, excluded)) reasons.push("排除名单");
-          log("INFO", "filter", `工作区排除: ${projectDir} (${decoded}) [${reasons.join(";")}]`);
+          if (listHit) reasons.push("排除名单");
+          log("INFO", "filter", `工作区排除: ${projectDir} (${realPath || decoded}) [${reasons.join(";")}]`);
           continue;
         }
-        for (const sessionDir of fs.readdirSync(pd)) {
-          const f = path.join(pd, sessionDir, "session.jsonl.zstd");
-          if (fs.existsSync(f)) files.push({ file: f, dir: sessionDir });
+        if (projectFiles.length === 0) {
+          log("INFO", "filter", `无转录文件跳过: ${projectDir} (${realPath || decoded})`);
+          continue;
         }
+        files.push(...projectFiles);
       }
     }
     if (files.length === 0) {

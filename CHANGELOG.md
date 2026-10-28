@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 0.1.6（2026-10-29）
+
+- **跟随 DSH 0.2.x 的 v4 会话格式与工作区身份判定**，四处修复（前两处是用户可感知的静默失效）：
+  1. **会话文件定位（G1）**：旧实现只认 `session.jsonl.zstd`；DSH 0.2.x 写 `session.v4.jsonl.zstd` → 升级后**所有新会话对解析器不可见**，DSH 侧素材静默断流。改为「同一会话目录取 mtime 最新的 `session*.jsonl(.zstd)`，同 mtime 取格式版本高的」。
+  2. **注入过滤（G1）**：v4 把消息来源从 `{kind:"plugin",plugin:"x"}` 改成生产者自有 kind（`plugin:<name>` / `time-context` / `user-approval` / `agent-instructions` …），旧黑名单全部漏网 → 插件自己注入的召回块会被当作真实用户消息**回灌记忆库**（自我污染循环）。改为**白名单**：只有 `kind:"user"`（或无 source 的历史消息）算真实用户，其余丢弃并计数，未知 kind 打 WARN。
+  3. **工作区身份判定（G1）**：`projectKey` 是 cwd 的有损编码（`: / \`→`-`，但不转义原有的 `-`），含连字符的路径会被切碎 → 台账精确匹配与 `0_` 前缀双失效。改为读**会话 header 的 `cwd`** 作权威路径；解码只作展示与兜底；**移除 basename 兜底**（连字符下只剩碎片，可能误命中别的区 → 误排除）。
+  4. **召回侧工作区排除（插件）**：原读 `agent.session.cwd`——该属性在 DSH 中**不存在**，排除判定恒为 false（自 0.1.3 上线起从未生效）。改为 `session.header.cwd` → 兜底 `ctx.workingDirectory.get(session)`；`inject` 增加 `workingDirectory`。
+- **工作区排除新增第三个渠道：台账标题**。`$DSH_HOME/storages/workspace.json` 的 `title` 以 `0_` 开头即排除——支持「只在 DSH 界面里把工作区改名成 `0_`、目录名不变」的用法（插件侧读台账并按 mtime 缓存，缺失时 fail-open）。
+- 兼容性：以上改动对 0.1.x 的会话格式与台账结构向后兼容（无 source 的历史消息仍视为真实用户；旧文件名仍在候选列表里）。
+- 影响面：`scripts/g1-session-parser.mjs`、`lib/index.js`、`package.json`；server / 导入命令未改动。
+- 验证：v4 会话识别（候选文件数上升、窗口内素材由 0 → 非 0）；同一 v4 会话旧版 26 turn/43 消息 → 新版 17 turn/34 消息（滤掉注入）；落盘批次零注入痕迹；插件假 ctx 六用例（目录名 `0_` / 台账标题 `0_` / 名单 / workingDirectory 兜底 / 普通区仍注入）全过。
+
 ### 0.1.5（2026-10-18）
 
 - **适配 DSH 0.2.x（0.2.1-rc.2 实测）**，两处改动，缺一不可：
