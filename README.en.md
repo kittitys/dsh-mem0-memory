@@ -2,6 +2,8 @@
 
 > **🌐 Language**: [中文](README.md) | English
 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/kittitys/badge.svg)](https://hub.xerj.org/contributors/kittitys)
+
 > **Status**: alpha (experimental). **In one line**: a DSH plugin + a CLI tool + a local service that automatically stores your DSH conversation memory into a mem0 vector store and recalls it in new sessions — **no more amnesia between conversations**.
 
 ---

@@ -2,6 +2,8 @@
 
 > **🌐 语言/Language**: 中文 | [English](README.en.md)
 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/kittitys/badge.svg)](https://hub.xerj.org/contributors/kittitys)
+
 > **状态**：alpha（实验性质）。**一句话**：一个 DSH 插件 + 一个命令行工具 + 一个本地服务，把你的 DSH 对话记忆自动存进 mem0 向量库，并在新会话里自动召回——**换对话不再失忆**。
 
 ---
